@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tưới Cây Thông Minh</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e88e5">
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body{font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f0f2f5; display: flex; justify-content: center; padding: 10px; margin: 0;}
+        .box{width:100%; max-width:400px; background:#fff; padding:20px; border-radius:20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);}
+        h2{text-align:center; color: #2e7d32; margin-bottom: 20px;}
+        .status-card{background: #f8f9fa; padding: 15px; border-radius: 12px; margin-bottom: 20px;}
+        .row{display: flex; justify-content: space-between; margin: 10px 0; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px;}
+        .row b{color: #1e88e5;}
+        label{display: block; margin-top: 15px; font-weight: bold; font-size: 14px; color: #555;}
+        input{width:100%; padding:12px; font-size:16px; margin-top:5px; border: 1px solid #ddd; border-radius: 10px; box-sizing: border-box;}
+        .btn-group{display: flex; gap: 10px; margin-top: 5px;}
+        button{width:100%; padding:15px; font-size:16px; margin-top:15px; border-radius:12px; border:none; cursor: pointer; font-weight: bold; transition: all 0.3s;}
+        .manual-btn{background:#e53935; color:#fff; box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3);}
+        .save-btn{background:#1e88e5; color:#fff; margin-top: 20px;}
+        button:active{transform: scale(0.98); opacity: 0.9;}
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h2>🌱 TƯỚI CÂY MQTT</h2>
+
+    <div class="status-card">
+        <div class="row">📶 WiFi: <b id="wifi">--</b></div>
+        <div class="row">⚙️ Chế độ: <b id="mode">--</b></div>
+        <div class="row">💧 Độ ẩm: <b id="soil">--</b></div>
+        <div class="row">🌧️ Mưa: <b id="rain">--</b></div>
+        <div class="row">🔋 Pin: <b id="bat">--</b></div>
+        <div class="row">🚿 Bơm: <b id="pump">--</b></div>
+    </div>
+
+    <label>Ngưỡng độ ẩm tự động (%)</label>
+    <input type="number" id="soilSet" placeholder="Ví dụ: 40">
+
+    <label>Thời gian tưới mỗi lần</label>
+    <div class="btn-group">
+        <input type="number" id="minSet" placeholder="Phút">
+        <input type="number" id="secSet" placeholder="Giây">
+    </div>
+
+    <button class="save-btn" onclick="saveSettings()">LƯU CÀI ĐẶT</button>
+    <button id="btnManual" class="manual-btn" onclick="toggleManual()">🚿 TƯỚI THỦ CÔNG</button>
+</div>
+
+<script>
+    let isPumpRunning = false;
+    const client = mqtt.connect("wss://broker.hivemq.com:8000/mqtt");
+
+    client.on("connect", () => {
+        client.subscribe("tuoi/status");
+        console.log("MQTT Connected");
+    });
+
+    client.on("message", (topic, message) => {
+        try {
+            const data = JSON.parse(message.toString());
+            
+            // Cập nhật giao diện
+            document.getElementById('wifi').textContent = data.wifi ? "OK" : "MẤT";
+            document.getElementById('mode').textContent = data.mode;
+            document.getElementById('soil').textContent = data.soil + "%";
+            document.getElementById('rain').textContent = data.rain ? "CÓ" : "KHÔNG";
+            document.getElementById('bat').textContent = data.bat.toFixed(2) + " V";
+            
+            const pumpEl = document.getElementById('pump');
+            const btnManual = document.getElementById('btnManual');
+            
+            isPumpRunning = data.pump;
+            if(isPumpRunning) {
+                pumpEl.textContent = "ĐANG CHẠY";
+                pumpEl.style.color = "#d32f2f";
+                btnManual.textContent = "🛑 DỪNG TƯỚI";
+                btnManual.style.background = "#333"; // Đổi màu khi đang chạy
+            } else {
+                pumpEl.textContent = "TẮT";
+                pumpEl.style.color = "#1e88e5";
+                btnManual.textContent = "🚿 TƯỚI THỦ CÔNG";
+                btnManual.style.background = "#e53935";
+            }
+        } catch (e) { console.error("JSON Error:", e); }
+    });
+
+    function toggleManual() {
+        if (!isPumpRunning) {
+            client.publish("tuoi/cmd", "MANUAL_ON");
+        } else {
+            client.publish("tuoi/cmd", "MANUAL_OFF");
+        }
+    }
+
+    function saveSettings() {
+        const sSet = document.getElementById('soilSet').value;
+        const mSet = document.getElementById('minSet').value || 0;
+        const sTime = document.getElementById('secSet').value || 0;
+
+        if (sSet) client.publish("tuoi/cmd", "SET_SOIL:" + sSet);
+        client.publish("tuoi/cmd", "SET_TIME:" + mSet + ":" + sTime);
+        alert("Đã gửi yêu cầu lưu cài đặt!");
+    }
+
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js");
+    }
+</script>
+</body>
+</html>
